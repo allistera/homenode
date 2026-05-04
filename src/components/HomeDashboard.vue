@@ -169,7 +169,7 @@ function loadPositions() {
     const saved = JSON.parse(localStorage.getItem('nodey_positions') || 'null')
     if (!saved) return
     rooms.value.forEach(r => { if (saved[r.id]) { r.ax = saved[r.id].ax; r.ay = saved[r.id].ay } })
-  } catch {}
+  } catch (_) { /* ignore invalid saved positions */ }
 }
 
 function resetPositions() {
@@ -251,7 +251,11 @@ function connectionPath(room) {
 
     <!-- Breadcrumb back button -->
     <Transition name="fade">
-      <button v-if="selectedRoom" class="back-btn" @click="goHome">
+      <button
+        v-if="selectedRoom"
+        class="back-btn"
+        @click="goHome"
+      >
         ← Home
       </button>
     </Transition>
@@ -259,40 +263,97 @@ function connectionPath(room) {
     <!-- Graph viewport -->
     <div class="graph-viewport">
       <!-- Transparent overlay catches double-clicks on empty space when zoomed -->
-      <div v-if="selectedRoom" class="dblclick-overlay" @dblclick="goHome" />
-      <div class="graph-container" :style="{ transform: graphTransform }">
-
+      <div
+        v-if="selectedRoom"
+        class="dblclick-overlay"
+        @dblclick="goHome"
+      />
+      <div
+        class="graph-container"
+        :style="{ transform: graphTransform }"
+      >
         <!-- SVG connection lines -->
-        <svg class="connections" :viewBox="`0 0 ${W} ${H}`" :width="W" :height="H">
+        <svg
+          class="connections"
+          :viewBox="`0 0 ${W} ${H}`"
+          :width="W"
+          :height="H"
+        >
           <defs>
-            <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stop-color="#7c3aed" stop-opacity="0.4"/>
-              <stop offset="100%" stop-color="#7c3aed" stop-opacity="0"/>
+            <radialGradient
+              id="centerGlow"
+              cx="50%"
+              cy="50%"
+              r="50%"
+            >
+              <stop
+                offset="0%"
+                stop-color="#7c3aed"
+                stop-opacity="0.4"
+              />
+              <stop
+                offset="100%"
+                stop-color="#7c3aed"
+                stop-opacity="0"
+              />
             </radialGradient>
             <!-- Per-room gradients from centre purple → room colour -->
             <linearGradient
               v-for="room in filteredRooms"
-              :key="`grad-${room.id}`"
               :id="`grad-${room.id}`"
-              :x1="center.x" :y1="center.y"
-              :x2="displayPos(room).x"  :y2="displayPos(room).y"
+              :key="`grad-${room.id}`"
+              :x1="center.x"
+              :y1="center.y"
+              :x2="displayPos(room).x"
+              :y2="displayPos(room).y"
               gradientUnits="userSpaceOnUse"
             >
-              <stop offset="0%"   stop-color="#7c3aed" stop-opacity="0.9"/>
-              <stop offset="100%" :stop-color="roomColor(room)" stop-opacity="0.7"/>
+              <stop
+                offset="0%"
+                stop-color="#7c3aed"
+                stop-opacity="0.9"
+              />
+              <stop
+                offset="100%"
+                :stop-color="roomColor(room)"
+                stop-opacity="0.7"
+              />
             </linearGradient>
-            <filter id="line-glow" x="-20%" y="-20%" width="140%" height="140%">
-              <feGaussianBlur stdDeviation="3" result="blur"/>
-              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            <filter
+              id="line-glow"
+              x="-20%"
+              y="-20%"
+              width="140%"
+              height="140%"
+            >
+              <feGaussianBlur
+                stdDeviation="3"
+                result="blur"
+              />
+              <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
             </filter>
-            <filter id="dot-glow" x="-150%" y="-150%" width="400%" height="400%">
-              <feGaussianBlur stdDeviation="2" result="blur"/>
-              <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+            <filter
+              id="dot-glow"
+              x="-150%"
+              y="-150%"
+              width="400%"
+              height="400%"
+            >
+              <feGaussianBlur
+                stdDeviation="2"
+                result="blur"
+              />
+              <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
             </filter>
           </defs>
 
           <!-- Ambient glow behind centre -->
-          <circle :cx="center.x" :cy="center.y" r="180" fill="url(#centerGlow)" />
+          <circle
+            :cx="center.x"
+            :cy="center.y"
+            r="180"
+            fill="url(#centerGlow)"
+          />
 
           <!-- Soft glow halo layer -->
           <path
@@ -334,7 +395,7 @@ function connectionPath(room) {
               repeatCount="indefinite"
               calcMode="linear"
             >
-              <mpath :href="`#mpath-${room.id}`"/>
+              <mpath :href="`#mpath-${room.id}`" />
             </animateMotion>
           </circle>
 
@@ -361,8 +422,10 @@ function connectionPath(room) {
             <line
               v-for="device in visibleDevices"
               :key="`devline-${device.id}`"
-              :x1="selectedRoom.ax" :y1="selectedRoom.ay"
-              :x2="device.x" :y2="device.y"
+              :x1="selectedRoom.ax"
+              :y1="selectedRoom.ay"
+              :x2="device.x"
+              :y2="device.y"
               :stroke="roomColor(selectedRoom)"
               stroke-width="1"
               stroke-dasharray="3 5"
@@ -379,9 +442,15 @@ function connectionPath(room) {
         >
           <div class="center-ring" />
           <div class="center-content">
-            <div class="center-label">AVG INDOOR</div>
-            <div class="center-temp">20.0<span class="unit">°C</span></div>
-            <div class="center-sub">12 rooms · 3 sensors</div>
+            <div class="center-label">
+              AVG INDOOR
+            </div>
+            <div class="center-temp">
+              20.0<span class="unit">°C</span>
+            </div>
+            <div class="center-sub">
+              12 rooms · 3 sensors
+            </div>
           </div>
         </div>
 
@@ -405,12 +474,24 @@ function connectionPath(room) {
           @mouseleave="hoveredRoom = null"
         >
           <div class="room-info">
-            <div class="room-name">{{ room.name }}</div>
-            <div class="room-floor">{{ room.floor }} floor</div>
-            <div v-if="room.temp !== null" class="room-stats">
+            <div class="room-name">
+              {{ room.name }}
+            </div>
+            <div class="room-floor">
+              {{ room.floor }} floor
+            </div>
+            <div
+              v-if="room.temp !== null"
+              class="room-stats"
+            >
               {{ room.temp }}°C · {{ room.hum }}%
             </div>
-            <div v-else class="room-no-sensor">no sensor</div>
+            <div
+              v-else
+              class="room-no-sensor"
+            >
+              no sensor
+            </div>
           </div>
           <div class="room-dot" />
         </div>
@@ -427,16 +508,23 @@ function connectionPath(room) {
               '--room-color': roomColor(selectedRoom),
               transitionDelay: `${device.index * 40}ms`,
             }"
-            @click.stop @dblclick.stop
+            @click.stop
+            @dblclick.stop
           >
             <span class="device-icon">{{ device.icon }}</span>
             <div class="device-info">
-              <div class="device-name">{{ device.name }}</div>
-              <div class="device-state" :class="`state-${device.state}`">{{ device.state }}</div>
+              <div class="device-name">
+                {{ device.name }}
+              </div>
+              <div
+                class="device-state"
+                :class="`state-${device.state}`"
+              >
+                {{ device.state }}
+              </div>
             </div>
           </div>
         </TransitionGroup>
-
       </div>
     </div>
 
@@ -450,12 +538,22 @@ function connectionPath(room) {
         :class="{ active: activeFloorFilter === floor }"
         @click="toggleFloorFilter(floor)"
       >
-        <span class="legend-dot" :style="{ background: color }" />
+        <span
+          class="legend-dot"
+          :style="{ background: color }"
+        />
         {{ floor }} floor
       </button>
       <Transition name="fade">
-        <button v-if="hasCustomPositions" class="reset-btn" @click="resetPositions">
-          <span class="legend-dot" style="background: #475569" />
+        <button
+          v-if="hasCustomPositions"
+          class="reset-btn"
+          @click="resetPositions"
+        >
+          <span
+            class="legend-dot"
+            style="background: #475569"
+          />
           reset layout
         </button>
       </Transition>
