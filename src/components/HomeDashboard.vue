@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 
 
 const W = 1000
@@ -62,6 +62,52 @@ const rooms = ref([
 const selectedRoom = ref(null)
 const hoveredRoom = ref(null)
 const activeFloorFilter = ref(null)
+const showSettings = ref(false)
+const haUrl = ref(localStorage.getItem('nodey_ha_url') || '')
+const haPat = ref(localStorage.getItem('nodey_ha_pat') || '')
+const validateState = ref('idle') // 'idle' | 'loading' | 'success' | 'error'
+const validateError = ref('')
+
+watch([haUrl, haPat], () => {
+  if (validateState.value !== 'idle') validateState.value = 'idle'
+})
+
+function saveSettings() {
+  localStorage.setItem('nodey_ha_url', haUrl.value)
+  localStorage.setItem('nodey_ha_pat', haPat.value)
+}
+
+async function validateConnection() {
+  validateState.value = 'loading'
+  validateError.value = ''
+  try {
+    const base = import.meta.env.DEV ? '/ha-proxy' : haUrl.value.replace(/\/$/, '')
+    const res = await fetch(`${base}/api/`, {
+      headers: { Authorization: `Bearer ${haPat.value}` },
+    })
+    if (res.ok) {
+      validateState.value = 'success'
+    } else {
+      validateError.value = `Server returned ${res.status}`
+      validateState.value = 'error'
+    }
+  } catch {
+    validateError.value = 'Could not reach server'
+    validateState.value = 'error'
+  }
+}
+
+const connectionBadge = computed(() => {
+  switch (validateState.value) {
+    case 'loading': return { text: '◉ CONNECTING...', cls: 'badge-connecting' }
+    case 'success': return { text: '◉ HOME ASSISTANT LIVE', cls: 'badge-connected' }
+    case 'error':   return { text: '◉ DISCONNECTED', cls: 'badge-error' }
+    default:
+      return (haUrl.value && haPat.value)
+        ? { text: '◉ HOME ASSISTANT', cls: 'badge-idle' }
+        : { text: '◉ NOT CONFIGURED', cls: 'badge-idle' }
+  }
+})
 
 const filteredRooms = computed(() => {
   if (!activeFloorFilter.value) return rooms.value
@@ -119,7 +165,10 @@ function goHome() {
 }
 
 function onKeydown(e) {
-  if (e.key === 'Escape' && selectedRoom.value) goHome()
+  if (e.key === 'Escape') {
+    if (showSettings.value) showSettings.value = false
+    else if (selectedRoom.value) goHome()
+  }
 }
 
 // Drag
@@ -199,7 +248,8 @@ const graphTransform = computed(() => {
   return `translate(${dx}px, ${dy}px) scale(${scale})`
 })
 
-const deviceRadius = 72
+const deviceRadiusX = 160
+const deviceRadiusY = 115
 
 const visibleDevices = computed(() => {
   if (!selectedRoom.value) return []
@@ -211,11 +261,22 @@ const visibleDevices = computed(() => {
     return {
       ...dev,
       index: i,
-      x: pos.x + Math.cos(angle) * deviceRadius,
-      y: pos.y + Math.sin(angle) * deviceRadius,
+      x: pos.x + Math.cos(angle) * deviceRadiusX,
+      y: pos.y + Math.sin(angle) * deviceRadiusY,
     }
   })
 })
+
+function isToggleable(device) {
+  return device.state === 'on' || device.state === 'off'
+}
+
+function toggleDevice(deviceId) {
+  if (!selectedRoom.value) return
+  const device = selectedRoom.value.devices.find(d => d.id === deviceId)
+  if (!device) return
+  device.state = device.state === 'on' ? 'off' : 'on'
+}
 
 function connectionPath(room) {
   const cx = center.x, cy = center.y
@@ -238,15 +299,83 @@ function connectionPath(room) {
     <header class="orbit-header">
       <div class="header-left">
         <span class="logo">HOME ORBIT</span>
-        <span class="live-badge">◉ HOME ASSISTANT LIVE</span>
+        <span class="live-badge" :class="connectionBadge.cls">{{ connectionBadge.text }}</span>
       </div>
       <div class="header-right">
         <span>FLOORS <strong>2</strong></span>
         <span>ROOMS <strong>12</strong></span>
         <span>SENSORS <strong>4</strong></span>
         <span>UPDATED <strong>08:51</strong></span>
+        <button
+          class="settings-btn"
+          @click="showSettings = true"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
       </div>
     </header>
+
+    <!-- Settings modal -->
+    <Transition name="fade">
+      <div
+        v-if="showSettings"
+        class="modal-backdrop"
+        @click.self="showSettings = false"
+      >
+        <div class="modal">
+          <div class="modal-header">
+            <span class="modal-title">Settings</span>
+            <button class="modal-close" @click="showSettings = false">✕</button>
+          </div>
+          <div class="modal-body">
+            <div class="settings-field">
+              <label class="settings-label">Home Assistant URL</label>
+              <input
+                v-model="haUrl"
+                class="settings-input"
+                type="url"
+                placeholder="http://homeassistant.local:8123"
+              />
+            </div>
+            <div class="settings-field">
+              <label class="settings-label">Long-Lived Access Token</label>
+              <input
+                v-model="haPat"
+                class="settings-input"
+                type="password"
+                placeholder="eyJ..."
+              />
+            </div>
+            <div class="settings-footer">
+              <span v-if="validateState === 'error'" class="validate-error">{{ validateError }}</span>
+              <span v-if="validateState === 'success'" class="validate-success">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                Connected
+              </span>
+              <button
+                v-if="validateState === 'success'"
+                class="validate-btn save-btn"
+                @click="saveSettings"
+              >
+                Save
+              </button>
+              <button
+                v-else
+                class="validate-btn"
+                :disabled="validateState === 'loading' || !haUrl || !haPat"
+                @click="validateConnection"
+              >
+                <span v-if="validateState === 'loading'" class="spinner" />
+                <span v-else>Validate</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </Transition>
 
 
     <!-- Breadcrumb back button -->
@@ -261,13 +390,10 @@ function connectionPath(room) {
     </Transition>
 
     <!-- Graph viewport -->
-    <div class="graph-viewport">
-      <!-- Transparent overlay catches double-clicks on empty space when zoomed -->
-      <div
-        v-if="selectedRoom"
-        class="dblclick-overlay"
-        @dblclick="goHome"
-      />
+    <div
+      class="graph-viewport"
+      @dblclick="selectedRoom && goHome()"
+    >
       <div
         class="graph-container"
         :style="{ transform: graphTransform }"
@@ -422,8 +548,8 @@ function connectionPath(room) {
             <line
               v-for="device in visibleDevices"
               :key="`devline-${device.id}`"
-              :x1="selectedRoom.ax"
-              :y1="selectedRoom.ay"
+              :x1="displayPos(selectedRoom).x"
+              :y1="displayPos(selectedRoom).y"
               :x2="device.x"
               :y2="device.y"
               :stroke="roomColor(selectedRoom)"
@@ -470,6 +596,7 @@ function connectionPath(room) {
             '--room-color': roomColor(room),
           }"
           @mousedown.stop="onNodeMouseDown(room, $event)"
+          @dblclick.stop
           @mouseenter="hoveredRoom = room"
           @mouseleave="hoveredRoom = null"
         >
@@ -502,13 +629,17 @@ function connectionPath(room) {
             v-for="device in visibleDevices"
             :key="`dev-${device.id}`"
             class="node device-node"
+            :class="{ 'device-toggleable': isToggleable(device) }"
             :style="{
               left: device.x + 'px',
               top: device.y + 'px',
               '--room-color': roomColor(selectedRoom),
+              '--left-color': isToggleable(device)
+                ? (device.state === 'on' ? '#6ee7b7' : '#1e293b')
+                : roomColor(selectedRoom),
               transitionDelay: `${device.index * 40}ms`,
             }"
-            @click.stop
+            @click.stop="toggleDevice(device.id)"
             @dblclick.stop
           >
             <span class="device-icon">{{ device.icon }}</span>
@@ -597,8 +728,15 @@ function connectionPath(room) {
 .live-badge {
   font-size: 10px;
   letter-spacing: 0.1em;
-  color: #6ee7b7;
-  opacity: 0.7;
+  transition: color 0.3s;
+}
+.badge-connected  { color: #6ee7b7; }
+.badge-error      { color: #f87171; }
+.badge-connecting { color: #94a3b8; animation: badge-pulse 1s ease-in-out infinite; }
+.badge-idle       { color: #475569; }
+@keyframes badge-pulse {
+  0%, 100% { opacity: 0.5; }
+  50%       { opacity: 1; }
 }
 .header-right {
   display: flex;
@@ -637,12 +775,6 @@ function connectionPath(room) {
   justify-content: center;
 }
 
-.dblclick-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  cursor: zoom-out;
-}
 
 .graph-container {
   position: relative;
@@ -868,13 +1000,23 @@ function connectionPath(room) {
   gap: 5px;
   background: rgba(10, 12, 24, 0.88);
   border: 1px solid rgba(255,255,255,0.1);
-  border-left: 2px solid var(--room-color);
+  border-left: 2px solid var(--left-color, var(--room-color));
   border-radius: 20px;
   padding: 5px 10px 5px 7px;
   backdrop-filter: blur(8px);
   box-shadow: 0 2px 12px rgba(0,0,0,0.5), 0 0 8px color-mix(in srgb, var(--room-color) 20%, transparent);
   white-space: nowrap;
-  pointer-events: none;
+  transition: background 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+.device-node.device-toggleable {
+  cursor: pointer;
+}
+.device-node.device-toggleable:hover {
+  background: rgba(20, 24, 40, 0.95);
+  box-shadow: 0 2px 16px rgba(0,0,0,0.6), 0 0 14px color-mix(in srgb, var(--left-color) 40%, transparent);
+  border-top-color: rgba(255,255,255,0.2);
+  border-right-color: rgba(255,255,255,0.2);
+  border-bottom-color: rgba(255,255,255,0.2);
 }
 .device-icon { font-size: 13px; line-height: 1; }
 .device-info { display: flex; flex-direction: column; gap: 1px; }
@@ -1031,5 +1173,166 @@ function connectionPath(room) {
 .slide-up-enter-from, .slide-up-leave-to {
   opacity: 0;
   transform: translateY(12px);
+}
+
+/* Settings button */
+.settings-btn {
+  background: none;
+  border: none;
+  color: #475569;
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+  transition: color 0.2s, background 0.2s;
+  margin-left: 4px;
+}
+.settings-btn:hover {
+  color: #e2e8f0;
+  background: rgba(255,255,255,0.07);
+}
+
+/* Modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.modal {
+  background: #0d1120;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 14px;
+  width: 360px;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.7);
+  overflow: hidden;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+.modal-title {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #e2e8f0;
+}
+.modal-close {
+  background: none;
+  border: none;
+  color: #475569;
+  font-size: 13px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: color 0.2s, background 0.2s;
+}
+.modal-close:hover {
+  color: #e2e8f0;
+  background: rgba(255,255,255,0.07);
+}
+.modal-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.settings-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+.settings-input {
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  padding: 9px 12px;
+  font-size: 12px;
+  color: #e2e8f0;
+  outline: none;
+  transition: border-color 0.2s;
+  font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
+}
+.settings-input::placeholder { color: #334155; }
+.settings-input:focus { border-color: rgba(124, 58, 237, 0.6); }
+
+.settings-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 4px;
+}
+.validate-btn {
+  background: rgba(124, 58, 237, 0.2);
+  border: 1px solid rgba(124, 58, 237, 0.4);
+  color: #c4b5fd;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 7px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 90px;
+  justify-content: center;
+  font-family: inherit;
+}
+.validate-btn:hover:not(:disabled) { background: rgba(124, 58, 237, 0.35); }
+.save-btn {
+  background: rgba(110, 231, 183, 0.15);
+  border-color: rgba(110, 231, 183, 0.4);
+  color: #6ee7b7;
+}
+.save-btn:hover { background: rgba(110, 231, 183, 0.25) !important; }
+.validate-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(196, 181, 253, 0.3);
+  border-top-color: #c4b5fd;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  display: inline-block;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.validate-success {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: #6ee7b7;
+}
+.validate-error {
+  font-size: 11px;
+  color: #f87171;
 }
 </style>
