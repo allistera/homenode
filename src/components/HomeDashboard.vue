@@ -171,10 +171,105 @@ function onKeydown(e) {
   }
 }
 
+// Pinch-zoom & pan (mobile)
+const userScale = ref(1)
+const userPanX = ref(0)
+const userPanY = ref(0)
+const MIN_SCALE = 0.5
+const MAX_SCALE = 4
+const viewportRef = ref(null)
+let touchState = null
+
+function resetView() {
+  userScale.value = 1
+  userPanX.value = 0
+  userPanY.value = 0
+}
+
+function touchDistance(t1, t2) {
+  return Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY)
+}
+
+function touchCenter(t1, t2) {
+  return { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 }
+}
+
+function onViewportTouchStart(e) {
+  if (selectedRoom.value) return
+  if (e.touches.length === 2) {
+    const [t1, t2] = e.touches
+    const rect = viewportRef.value.getBoundingClientRect()
+    const vx = rect.left + rect.width / 2
+    const vy = rect.top + rect.height / 2
+    const mid = touchCenter(t1, t2)
+    touchState = {
+      mode: 'pinch',
+      startDistance: touchDistance(t1, t2),
+      startScale: userScale.value,
+      anchorU: (mid.x - vx - userPanX.value) / userScale.value,
+      anchorV: (mid.y - vy - userPanY.value) / userScale.value,
+      vx,
+      vy,
+    }
+    e.preventDefault()
+  } else if (e.touches.length === 1) {
+    const t = e.touches[0]
+    touchState = {
+      mode: 'pan-pending',
+      startX: t.clientX,
+      startY: t.clientY,
+      startPanX: userPanX.value,
+      startPanY: userPanY.value,
+    }
+  }
+}
+
+function onViewportTouchMove(e) {
+  if (!touchState) return
+  if (touchState.mode === 'pinch' && e.touches.length >= 2) {
+    e.preventDefault()
+    const [t1, t2] = e.touches
+    const ratio = touchDistance(t1, t2) / touchState.startDistance
+    const newScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, touchState.startScale * ratio))
+    const mid = touchCenter(t1, t2)
+    userScale.value = newScale
+    userPanX.value = mid.x - touchState.vx - touchState.anchorU * newScale
+    userPanY.value = mid.y - touchState.vy - touchState.anchorV * newScale
+  } else if ((touchState.mode === 'pan' || touchState.mode === 'pan-pending') && e.touches.length === 1) {
+    const t = e.touches[0]
+    const dx = t.clientX - touchState.startX
+    const dy = t.clientY - touchState.startY
+    if (touchState.mode === 'pan-pending') {
+      if (Math.hypot(dx, dy) < 8) return
+      touchState.mode = 'pan'
+    }
+    e.preventDefault()
+    userPanX.value = touchState.startPanX + dx
+    userPanY.value = touchState.startPanY + dy
+  }
+}
+
+function onViewportTouchEnd(e) {
+  if (e.touches.length === 0) {
+    touchState = null
+  } else if (e.touches.length === 1 && touchState?.mode === 'pinch') {
+    const t = e.touches[0]
+    touchState = {
+      mode: 'pan',
+      startX: t.clientX,
+      startY: t.clientY,
+      startPanX: userPanX.value,
+      startPanY: userPanY.value,
+    }
+  }
+}
+
+watch(selectedRoom, (room) => { if (room) resetView() })
+
 // Drag
 const dragging = ref(null) // { room, startMouseX, startMouseY, startAx, startAy }
 const dragMoved = ref(false)
-const currentScale = computed(() => selectedRoom.value ? 2.2 : 1)
+const currentScale = computed(() => selectedRoom.value ? 2.2 : userScale.value)
 
 function onNodeMouseDown(room, e) {
   e.preventDefault()
@@ -240,7 +335,9 @@ onUnmounted(() => {
 })
 
 const graphTransform = computed(() => {
-  if (!selectedRoom.value) return 'translate(0px, 0px) scale(1)'
+  if (!selectedRoom.value) {
+    return `translate(${userPanX.value}px, ${userPanY.value}px) scale(${userScale.value})`
+  }
   const pos = displayPos(selectedRoom.value)
   const scale = 2.2
   const dx = (W / 2 - pos.x) * scale
@@ -391,8 +488,13 @@ function connectionPath(room) {
 
     <!-- Graph viewport -->
     <div
+      ref="viewportRef"
       class="graph-viewport"
-      @dblclick="selectedRoom && goHome()"
+      @dblclick="selectedRoom ? goHome() : resetView()"
+      @touchstart="onViewportTouchStart"
+      @touchmove="onViewportTouchMove"
+      @touchend="onViewportTouchEnd"
+      @touchcancel="onViewportTouchEnd"
     >
       <div
         class="graph-container"
@@ -773,6 +875,7 @@ function connectionPath(room) {
   display: flex;
   align-items: center;
   justify-content: center;
+  touch-action: none;
 }
 
 
@@ -1334,5 +1437,33 @@ function connectionPath(room) {
 .validate-error {
   font-size: 11px;
   color: #f87171;
+}
+
+/* Mobile */
+@media (max-width: 640px) {
+  .orbit-header {
+    padding: 10px 14px;
+    gap: 8px;
+  }
+  .header-right {
+    gap: 10px;
+    font-size: 10px;
+  }
+  .header-right > span:nth-child(n+3) {
+    display: none;
+  }
+  .legend {
+    padding: 8px 14px;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .back-btn {
+    top: 50px;
+    left: 14px;
+  }
+  .modal {
+    width: calc(100vw - 32px);
+    max-width: 360px;
+  }
 }
 </style>
